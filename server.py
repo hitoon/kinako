@@ -7,8 +7,6 @@ import os
 import sys
 from datetime import datetime, timedelta
 from argparse import ArgumentParser
-import threading
-import sleepchecker
 
 from flask import Flask, request, abort
 from linebot import (
@@ -22,7 +20,66 @@ from linebot.models import (
     TemplateSendMessage, ButtonsTemplate, DatetimePickerTemplateAction
 )
 
+import threading
+import sleepchecker
+
 app = Flask(__name__)
+
+
+class Alarm:
+    def __init__(self):
+        self.active = False
+        self.snooze_sec = 130
+        self.set_count = 0  # setした回数
+        self.ring_count = 0 # アラームがなった回数
+
+    def set(self, sec):
+        # threadingでアラームを起動
+        alarm_thread = threading.Timer(sec, self.ring)
+        alarm_thread.start()
+        
+        # アラームが鳴る1分前に最新の睡眠情報を取得
+        fitbit_thread = threading.Timer(sec - 60, self.check_sleep_fitbit)
+        fitbit_thread.start()
+        
+        if self.set_count == 0:
+            message = 'Alarm: on'
+            line_bot_api.push_message(line_user_id,TextSendMessage(text=message))
+            print("Alarm: on")
+            self.active = True
+            self.set_count += 1
+        else:
+            print("Alarm: set, After: {}sec, Set_count: {}".format(sec, self.set_count))
+            self.set_count += 1
+
+    def reset(self):
+        self.active = False
+        self.snooze_sec = 130
+        self.set_count = 0
+        self.ring_count = 0
+
+    def ring(self):
+        if self.active == True:
+            self.ring_count += 1
+            message = "起きてー, {}回目".format(self.ring_count)
+            line_bot_api.push_message(line_user_id, TextSendMessage(text=message))
+            print("Alarm: ring, Ring_count: {}".format(self.ring_count))
+    
+    def check_sleep_fitbit(self):
+        if self.active == True:
+            #checker = sleepchecker.Checker()
+            #result = checker.check_sleep()
+            result = True
+            if result != False:
+                # 睡眠情報がある = 寝ている場合
+                self.set(self.snooze_sec)
+                # 6分後(1分前に取得しているため起床したい時刻の5分後)
+            else:
+                # 起きていた場合
+                print("Alarm: off")
+
+
+alm = Alarm()
 
 # get channel_secret and channel_access_token from your environment variable
 channel_secret = os.getenv('LINE_CHANNEL_SECRET', None)
@@ -43,7 +100,6 @@ if line_user_id is None:
 line_bot_api = LineBotApi(channel_access_token)
 parser = WebhookParser(channel_secret)
 
-snooze_sec = 30
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -68,9 +124,7 @@ def callback():
                 now = datetime.now()
                 alarm_time = datetime.strptime(dt, '%Y-%m-%dT%H:%M')
                 dif = alarm_time - now
-                print("アラームセットまで(秒)", dif.seconds)
-                set_first_alarm(dif.seconds, event.reply_token)
-            return "OK"
+                alm.set(dif.seconds)
 
         if not isinstance(event, MessageEvent):
             continue
@@ -82,15 +136,27 @@ def callback():
         if message == "set":
             # アラームセットのためのlineテンプレートの送信
             make_set_alarm_event(event.reply_token)
+        elif message == "off":
+            if alm.active is True:
+                alm.reset()
+                message = 'Alarm: off'
+                line_bot_api.push_message(line_user_id,TextSendMessage(text=message))
+                print("Alarm: off")
+            else:
+                message = 'Alarm is not active'
+                line_bot_api.push_message(line_user_id,TextSendMessage(text=message))
+                print(message)
+
         else:
             line_bot_api.reply_message(
                 event.reply_token,
                 TextSendMessage(text=message)
             )
-    return 'OK'
+    return "ok"
 
 def make_set_alarm_event(token):
     # アラームセットのためのlineテンプレートの送信
+    # TODO: 古いテンプレートは使えないようにする
     now = datetime.now()
     two_min_later = now + timedelta(minutes=2)
     date_picker = TemplateSendMessage(
@@ -113,47 +179,6 @@ def make_set_alarm_event(token):
     line_bot_api.reply_message(token, date_picker)
     return 1
 
-def set_first_alarm(sec, token):# 何秒後にアラーム鳴らすか
-    # threadingでアラームを起動
-    alarm_thread = threading.Timer(sec, alarm)
-    alarm_thread.start()
-
-    # fitbit判定threadの起動, アラーム設定時刻7分後に寝ているかどうか取得し、
-    # 寝ていたらもう一度アラームを鳴らす
-    fitbit_thread = threading.Timer(sec + snooze_sec, check_fitbit)
-    fitbit_thread.start()
-
-    message = "初回アラームをセットしました！"
-    line_bot_api.reply_message(token, TextSendMessage(text=message))
-    return 1
-
-def check_fitbit():
-    checker = sleepchecker.Checker()
-    result = checker.check_sleep()
-    if result != False:
-        set_alarm(1)
-    else:
-        print("スヌーズ終わり")
-    return 1
-
-def set_alarm(sec):# 何秒後にアラーム鳴らすか
-    # threadingでアラームを起動
-    alarm_thread = threading.Timer(sec, alarm)
-    alarm_thread.start()
-
-    # fitbit判定threadの起動, アラーム設定時刻5分後に寝ているかどうか取得し、
-    # 寝ていたらもう一度アラームを鳴らす
-    fitbit_thread = threading.Timer(sec + snooze_sec, check_fitbit)
-    fitbit_thread.start()
-    message = '寝坊してると判定したためスヌーズをセットしました(7分後)'
-    line_bot_api.push_message(line_user_id,TextSendMessage(text=message))
-    return 1
-
-def alarm():
-    line_bot_api.push_message(line_user_id, TextSendMessage(text='起きてー'))
-    print("アラームを呼びました")
-    print("現在のスレッド数", threading.active_count())
-    return 1
 
 if __name__ == "__main__":
     arg_parser = ArgumentParser(
