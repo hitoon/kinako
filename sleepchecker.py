@@ -2,6 +2,7 @@
 
 
 import os
+import sys
 import fitbit
 import datetime
 from ast import literal_eval
@@ -33,17 +34,23 @@ class Checker:
                 refresh_cb = update_token)
 
     def test_checker(self):
-        DATE = "2018-06-01"
+        today = str(datetime.date.today())
         data_sec = self.client.intraday_time_series('activities/heart',
-                DATE, detail_level='1sec') #'1sec', '1min', or '15min'
-
+                today, detail_level='1sec') #'1sec', '1min', or '15min'
         heart_sec = data_sec["activities-heart-intraday"]["dataset"]
-        print(heart_sec[-100:])
+        print(heart_sec[-10:])
 
     def _get_minute_dict(self, DATE):
+        #DATE = "2018-06-10" # テスト用
         sleepdata = self.client.sleep(date=DATE)
-        dateOfSleep = sleepdata["sleep"][0]["dateOfSleep"]
-        sleep_minute = sleepdata["sleep"][0]["minuteData"]
+        try:
+            dateOfSleep = sleepdata["sleep"][0]["dateOfSleep"]
+            sleep_minute = sleepdata["sleep"][0]["minuteData"]
+        except IndexError:
+            print("まだ今日の睡眠データがありません")
+            print("同期を確認してください")
+            sys.exit(1)
+        
         keys = []
         vals = []
         for i in sleep_minute:
@@ -62,22 +69,25 @@ class Checker:
         #   3: very awake
 
     def check_sleep(self):
-        # todo: 同期してない　→　同期してください
-        # 今から30分前のデータをみる → 寝ていたら睡眠状態を返す
+        # 今から10分前のデータをみる → 寝ていたら睡眠状態を返す
         today = str(datetime.date.today())
         minute_dict = self._get_minute_dict(today)
+        print(minute_dict[-10:])
         latest = minute_dict[-1]
         tdatetime = datetime.datetime.strptime(latest[0], '%Y-%m-%d %H:%M:%S')
         now_time = datetime.datetime.now() #.strftime("%H:%M:%S")
         time_difference = now_time - tdatetime
         time_difference_minute = time_difference.seconds // 60
         print("最新の睡眠データと現在の時刻の差:", time_difference, "分:", time_difference_minute)
-        if time_difference_minute < 10:
+        if time_difference_minute < 10:# 単位：分
             return latest[1]
         else:
             print("直前10分の睡眠データがありません")
-            return False
+            #return False
+            return 1
+
 
 if __name__ == "__main__":
     checker = Checker()
+    checker.test_checker()
     checker.check_sleep()
