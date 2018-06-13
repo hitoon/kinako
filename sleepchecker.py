@@ -6,6 +6,7 @@ import sys
 import fitbit
 import datetime
 from ast import literal_eval
+import pandas as pd
 
 
 CLIENT_ID = os.environ["FITBIT_CLIENT_ID"]
@@ -39,6 +40,16 @@ class Checker:
                 today, detail_level='1sec') #'1sec', '1min', or '15min'
         heart_sec = data_sec["activities-heart-intraday"]["dataset"]
         print(heart_sec[-10:])
+        return heart_sec
+
+    def get_heart_graph(self):
+        today = str(datetime.date.today())
+        heart_sec = self.test_checker()
+        heart_df = pd.DataFrame.from_dict(heart_sec)
+        heart_df.index = pd.to_datetime([today + " " + t for t in heart_df.time])
+        ax = heart_df.plot(y="value", figsize=(20,5))
+        fig = ax.get_figure()
+        fig.savefig('heart_graph.png')
 
     def _get_minute_dict(self, DATE):
         #DATE = "2018-06-10" # テスト用
@@ -79,15 +90,14 @@ class Checker:
         time_difference = now_time - tdatetime
         time_difference_minute = time_difference.seconds // 60
         print("最新の睡眠データと現在の時刻の差:", time_difference, "分:", time_difference_minute)
-        if time_difference_minute < 10:# 単位：分
+        if time_difference_minute < 30:# 単位：分
             return latest[1]
         else:
             print("直前10分の睡眠データがありません")
-            #return False
-            return 1
+            return False
 
 
 if __name__ == "__main__":
     checker = Checker()
-    checker.test_checker()
+    #checker.get_heart_graph()
     checker.check_sleep()
