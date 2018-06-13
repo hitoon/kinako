@@ -29,9 +29,9 @@ app = Flask(__name__)
 class Alarm:
     def __init__(self):
         self.active = False
-        self.snooze_sec = 130
-        self.set_count = 0  # setした回数
-        self.ring_count = 0 # アラームがなった回数
+        self.snooze_sec = 600 # 基本10分
+        self.set_count = 0    # setした回数
+        self.ring_count = 0   # アラームがなった回数
 
     def set(self, sec):
         # threadingでアラームを起動
@@ -43,18 +43,17 @@ class Alarm:
         fitbit_thread.start()
         
         if self.set_count == 0:
-            message = 'Alarm: on'
-            line_bot_api.push_message(line_user_id,TextSendMessage(text=message))
+            #message = 'Alarm: on'
+            #line_bot_api.push_message(line_user_id,TextSendMessage(text=message))
             print("Alarm: on")
             self.active = True
             self.set_count += 1
         else:
-            print("Alarm: set, After: {}sec, Set_count: {}".format(sec, self.set_count))
+            print("Alarm: snooze set, After: {}sec, Set_count: {}".format(sec, self.set_count))
             self.set_count += 1
 
     def reset(self):
         self.active = False
-        self.snooze_sec = 130
         self.set_count = 0
         self.ring_count = 0
 
@@ -67,16 +66,17 @@ class Alarm:
     
     def check_sleep_fitbit(self):
         if self.active == True:
-            #checker = sleepchecker.Checker()
-            #result = checker.check_sleep()
-            result = True
+            checker = sleepchecker.Checker()
+            result = checker.check_sleep()
+            #result = True
             if result != False:
                 # 睡眠情報がある = 寝ている場合
                 self.set(self.snooze_sec)
-                # 6分後(1分前に取得しているため起床したい時刻の5分後)
             else:
                 # 起きていた場合
-                print("Alarm: off")
+                message = "起きてる！"
+                line_bot_api.push_message(line_user_id, TextSendMessage(text=message))
+                make_alarm_off()
 
 
 alm = Alarm()
@@ -107,7 +107,7 @@ def callback():
 
     # get request body as text
     body = request.get_data(as_text=True)
-    print("Request body: " + body)
+    #print("Request body: " + body)
 
     # parse webhook body
     try:
@@ -125,6 +125,8 @@ def callback():
                 alarm_time = datetime.strptime(dt, '%Y-%m-%dT%H:%M')
                 dif = alarm_time - now
                 alm.set(dif.seconds)
+                message = 'Alarm: on, at ' + dt
+                line_bot_api.push_message(line_user_id,TextSendMessage(text=message))
 
         if not isinstance(event, MessageEvent):
             continue
@@ -137,16 +139,9 @@ def callback():
             # アラームセットのためのlineテンプレートの送信
             make_set_alarm_event(event.reply_token)
         elif message == "off":
-            if alm.active is True:
-                alm.reset()
-                message = 'Alarm: off'
-                line_bot_api.push_message(line_user_id,TextSendMessage(text=message))
-                print("Alarm: off")
-            else:
-                message = 'Alarm is not active'
-                line_bot_api.push_message(line_user_id,TextSendMessage(text=message))
-                print(message)
-
+            make_alarm_off()
+        elif message == "status":
+            check_alarm_status()
         else:
             line_bot_api.reply_message(
                 event.reply_token,
@@ -177,7 +172,22 @@ def make_set_alarm_event(token):
                 )
             )
     line_bot_api.reply_message(token, date_picker)
-    return 1
+
+def make_alarm_off():
+    if alm.active is True:
+        alm.reset()
+        message = 'Alarm: off'
+        line_bot_api.push_message(line_user_id,TextSendMessage(text=message))
+        print("Alarm: off")
+    else:
+        message = 'Alarm is not active'
+        line_bot_api.push_message(line_user_id,TextSendMessage(text=message))
+        print(message)
+
+def check_alarm_status():
+    message = "アラーム: {}\n睡眠判定までの時間: {}秒\n現在の睡眠判定回数: {}\
+            \nアラームを鳴らした回数: {}".format(alm.active, alm.snooze_sec, alm.set_count, alm.ring_count)
+    line_bot_api.push_message(line_user_id,TextSendMessage(text=message))
 
 
 if __name__ == "__main__":
