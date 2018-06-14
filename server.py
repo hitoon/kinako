@@ -17,19 +17,21 @@ from linebot.exceptions import (
 )
 from linebot.models import (
     MessageEvent, TextMessage, TextSendMessage,
-    TemplateSendMessage, ButtonsTemplate, DatetimePickerTemplateAction
+    TemplateSendMessage, ButtonsTemplate, DatetimePickerTemplateAction,
+    ImageSendMessage
 )
 
 import threading
 import sleepchecker
 
-app = Flask(__name__)
-
-
 class Alarm:
     def __init__(self):
         self.active = False
-        self.snooze_sec = 600 # 基本10分
+        
+        """-----------テスト用---------"""
+        #self.snooze_sec = 600 # 基本10分(600)
+        self.snooze_sec = 100 # test:1分40(100)
+        
         self.set_count = 0    # setした回数
         self.ring_count = 0   # アラームがなった回数
 
@@ -43,8 +45,6 @@ class Alarm:
         fitbit_thread.start()
         
         if self.set_count == 0:
-            #message = 'Alarm: on'
-            #line_bot_api.push_message(line_user_id,TextSendMessage(text=message))
             print("Alarm: on")
             self.active = True
             self.set_count += 1
@@ -61,27 +61,28 @@ class Alarm:
         if self.active == True:
             self.ring_count += 1
             message = "起きてー, {}回目".format(self.ring_count)
-            line_bot_api.push_message(line_user_id, TextSendMessage(text=message))
+            push_message(message)
             print("Alarm: ring, Ring_count: {}".format(self.ring_count))
     
     def check_sleep_fitbit(self):
         if self.active == True:
             checker = sleepchecker.Checker()
             result = checker.check_sleep()
-            #result = True
-            if result != False:
+            if result == None:
+                # 睡眠情報がない
+                message = "睡眠情報がありません。同期を確認してください！"
+                push_message(message)
+                self.set(self.snooze_sec)
+            elif result == False:
+                # 起きていた場合
+                message = "起床しているので、アラームをOFFにしました！"
+                push_message(message)
+                make_alarm_off()
+            else:
                 # 睡眠情報がある = 寝ている場合
                 self.set(self.snooze_sec)
-            else:
-                # 起きていた場合
-                message = "起きてる！"
-                line_bot_api.push_message(line_user_id, TextSendMessage(text=message))
-                make_alarm_off()
 
 
-alm = Alarm()
-
-# get channel_secret and channel_access_token from your environment variable
 channel_secret = os.getenv('LINE_CHANNEL_SECRET', None)
 channel_access_token = os.getenv('LINE_CHANNEL_ACCESS_TOKEN', None)
 line_user_id = os.getenv('LINE_USER_ID', None)
@@ -92,20 +93,20 @@ if channel_access_token is None:
     print('Specify LINE_CHANNEL_ACCESS_TOKEN as environment variable.')
     sys.exit(1)
 
-# push通知送信のためのuser_id
-if line_user_id is None:
+if line_user_id is None: #push通知用
     print('Specify LINE_USER_ID as environment variable.')
     sys.exit(1)
 
 line_bot_api = LineBotApi(channel_access_token)
 parser = WebhookParser(channel_secret)
 
+app = Flask(__name__)
+alm = Alarm()
 
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers['X-Line-Signature']
 
-    # get request body as text
     body = request.get_data(as_text=True)
     #print("Request body: " + body)
 
@@ -118,15 +119,17 @@ def callback():
     # if event is MessageEvent and message is TextMessage, then echo text
     for event in events:
         if event.type == "postback":
-            # lineテンプレートで選択された時刻にアラームをセット
+            """ lineテンプレートで選択された時刻にアラームをセット """
             if event.postback.data == "datetime_picker":
-                dt = event.postback.params["datetime"]# なぜか最後だけdict
+                dt = event.postback.params["datetime"]
                 now = datetime.now()
                 alarm_time = datetime.strptime(dt, '%Y-%m-%dT%H:%M')
                 dif = alarm_time - now
                 alm.set(dif.seconds)
-                message = 'Alarm: on, at ' + dt
-                line_bot_api.push_message(line_user_id,TextSendMessage(text=message))
+                print(dif.seconds)
+                # TODO:この位置正しいのか確認
+                message = 'Alarm: on, at ' + " ".join(dt.split("T"))
+                push_message(message)
 
         if not isinstance(event, MessageEvent):
             continue
@@ -142,6 +145,8 @@ def callback():
             make_alarm_off()
         elif message == "status":
             check_alarm_status()
+        elif message == "graph":
+            send_heart_graph()
         else:
             line_bot_api.reply_message(
                 event.reply_token,
@@ -153,7 +158,7 @@ def make_set_alarm_event(token):
     # アラームセットのためのlineテンプレートの送信
     # TODO: 古いテンプレートは使えないようにする
     now = datetime.now()
-    two_min_later = now + timedelta(minutes=2)
+    two_min_later = now + timedelta(minutes=2) # アラームセット2分後以降のみ
     date_picker = TemplateSendMessage(
             alt_text='datetime picker',
             template=ButtonsTemplate(
@@ -177,17 +182,28 @@ def make_alarm_off():
     if alm.active is True:
         alm.reset()
         message = 'Alarm: off'
-        line_bot_api.push_message(line_user_id,TextSendMessage(text=message))
+        push_message(message)
         print("Alarm: off")
     else:
         message = 'Alarm is not active'
-        line_bot_api.push_message(line_user_id,TextSendMessage(text=message))
+        push_message(message)
         print(message)
 
 def check_alarm_status():
     message = "アラーム: {}\n睡眠判定までの時間: {}秒\n現在の睡眠判定回数: {}\
             \nアラームを鳴らした回数: {}".format(alm.active, alm.snooze_sec, alm.set_count, alm.ring_count)
-    line_bot_api.push_message(line_user_id,TextSendMessage(text=message))
+    push_message(message)
+
+def send_heart_graph():
+    sleepchecker.get_heart_graph()
+    messages = ImageSendMessage(
+        original_content_url="https://hogehoge.jpg", #JPEG 最大画像サイズ：240×240 最大ファイルサイズ：1MB(注意:仕様が変わっていた)
+        preview_image_url="https://hogehoge-mini.jpg" #JPEG 最大画像サイズ：1024×1024 最大ファイルサイズ：1MB(注意:仕様が変わっていた)
+    )
+    return messages
+
+def push_message(message):
+    line_bot_api.push_message(line_user_id, TextSendMessage(text=message))
 
 
 if __name__ == "__main__":
