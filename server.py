@@ -194,14 +194,6 @@ def check_alarm_status():
             \nアラームを鳴らした回数: {}".format(alm.active, alm.snooze_sec, alm.set_count, alm.ring_count)
     push_message(message)
 
-def send_heart_graph():
-    sleepchecker.get_heart_graph()
-    messages = ImageSendMessage(
-        original_content_url="https://hogehoge.jpg", #JPEG 最大画像サイズ：240×240 最大ファイルサイズ：1MB(注意:仕様が変わっていた)
-        preview_image_url="https://hogehoge-mini.jpg" #JPEG 最大画像サイズ：1024×1024 最大ファイルサイズ：1MB(注意:仕様が変わっていた)
-    )
-    return messages
-
 def push_message(message):
     line_bot_api.push_message(line_user_id, TextSendMessage(text=message))
 
