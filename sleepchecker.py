@@ -51,16 +51,15 @@ class Checker:
         fig = ax.get_figure()
         fig.savefig('heart_graph.png')
 
-    def _get_minute_dict(self, DATE):
+    def check_sleep(self, DATE):
         #DATE = "2018-06-10" # テスト用
         sleepdata = self.client.sleep(date=DATE)
         try:
             dateOfSleep = sleepdata["sleep"][0]["dateOfSleep"]
             sleep_minute = sleepdata["sleep"][0]["minuteData"]
         except IndexError:
-            print("まだ今日の睡眠データがありません")
-            print("同期を確認してください")
-            sys.exit(1)
+            print("睡眠データがありません")
+            return None
         
         keys = []
         vals = []
@@ -69,7 +68,8 @@ class Checker:
             keys.append(dt)
             vals.append(i["value"])
         tuple_ = [(k, v) for k, v in zip(keys, vals)]
-        return tuple_ # tuple: [(dateTime, sleep), ・・・]
+        return tuple_ 
+        # tuple: [(dateTime, sleep), ・・・]
         #dict_ = dict(zip(keys, vals))
         #return dict_ # dict_: {dateTime: value}
         
@@ -79,25 +79,31 @@ class Checker:
         #   2: awake
         #   3: very awake
 
-    def check_sleep(self):
+    def get_margin(self, date=None):
         # 今から10分前のデータをみる → 寝ていたら睡眠状態を返す
-        today = str(datetime.date.today())
-        minute_dict = self._get_minute_dict(today)
-        print(minute_dict[-10:])
+        if date == None:
+            date = str(datetime.date.today())# 今日
+        
+        minute_dict = self.check_sleep(date)
+        if minute_dict is None:
+            return None
+        
         latest = minute_dict[-1]
         tdatetime = datetime.datetime.strptime(latest[0], '%Y-%m-%d %H:%M:%S')
         now_time = datetime.datetime.now() #.strftime("%H:%M:%S")
         time_difference = now_time - tdatetime
-        time_difference_minute = time_difference.seconds // 60
+        time_difference_minute = time_difference.seconds
         print("最新の睡眠データと現在の時刻の差:", time_difference, "分:", time_difference_minute)
         if time_difference_minute < 30:# 単位：分
             return latest[1]
         else:
-            print("直前10分の睡眠データがありません")
+            print("直前30分の睡眠データがありません")
             return False
 
 
 if __name__ == "__main__":
     checker = Checker()
     #checker.get_heart_graph()
-    checker.check_sleep()
+    sleep_data = checker.check_sleep("2018-07-27")
+    print(sleep_data)
+    #checker.get_margin()
