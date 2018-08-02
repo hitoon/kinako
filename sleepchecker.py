@@ -68,7 +68,6 @@ class Checker:
             keys.append(dt)
             vals.append(i["value"])
         tuple_ = [(k, v) for k, v in zip(keys, vals)]
-        print(tuple_[:10])
         return tuple_ 
         # tuple: [(dateTime, sleep), ・・・]
         #dict_ = dict(zip(keys, vals))
@@ -105,5 +104,6 @@ class Checker:
 if __name__ == "__main__":
     checker = Checker()
     #checker.get_heart_graph()
-    #checker.check_sleep("2018-07-27")
-    checker.get_margin("2018-07-27")
+    sleep_data = checker.check_sleep("2018-07-27")
+    print(sleep_data)
+    #checker.get_margin()

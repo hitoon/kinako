@@ -23,6 +23,7 @@ from linebot.models import (
 
 import threading
 import sleepchecker
+import requests
 
 class Alarm:
     def __init__(self):
@@ -60,7 +61,8 @@ class Alarm:
     def ring(self):
         if self.active == True:
             self.ring_count += 1
-            message = "起きてー, {}回目".format(self.ring_count)
+            r = requests.get("http://192.168.3.2:5000/play/JR.mp3")
+            message = "Alarm rang, {}回目".format(self.ring_count)
             push_message(message)
             print("Alarm: ring, Ring_count: {}".format(self.ring_count))
     
@@ -202,7 +204,7 @@ if __name__ == "__main__":
     arg_parser = ArgumentParser(
         usage='Usage: python ' + __file__ + ' [--port <port>] [--help]'
     )
-    arg_parser.add_argument('-p', '--port', type=int, default=5000, help='port')
+    arg_parser.add_argument('-p', '--port', type=int, default=3000, help='port')
     arg_parser.add_argument('-d', '--debug', default=True, help='debug')
     options = arg_parser.parse_args()
 
