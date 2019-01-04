@@ -3,7 +3,7 @@
 > Fitbitで睡眠を検知し、それに応じてアラームを鳴らすシステム
 > 判定部分とインターフェース(Line bot)のみ
 
-## Build Setup
+## Setup
 
 ``` bash
 # line bot, fitbitの設定が必要
